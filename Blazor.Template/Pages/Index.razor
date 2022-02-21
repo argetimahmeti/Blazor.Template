@@ -1,0 +1,149 @@
+﻿@page "/"
+@page "/{Page:int}"
+
+@using Blazor.Template.Data
+@using Blazor.Template.Data.Model
+@using Blazor.Template.Services.ContactService
+@using Microsoft.EntityFrameworkCore
+
+@inject IContactFilters Filters
+@inject IDbContextFactory<BlazorContext> DbFactory
+@inject ContactService service
+@inject NavigationManager Nav
+
+<PageTitle>Blazor</PageTitle>
+
+<h1>Contacts</h1>
+
+<p>This component demonstrates fetching data from a service.</p>
+
+@if (Contacts == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <div class="row">
+        <div class="col-12">
+            Page @Filters.PageHelper.Page of @Filters.PageHelper.PageCount:
+            showing @Filters.PageHelper.PageItems of
+            @Filters.PageHelper.TotalItemCount items.
+        </div>
+    </div>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Phone</th>
+                <th>Address</th>
+                <th>Zip Code</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in Contacts)
+            {
+                <tr>
+                    <td>@item.FirstName</td>
+                    <td>@item.Phone</td>
+                    <td>@item.Street</td>
+                    <td>@item.ZipCode</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <div class="row">
+        <div class="col-12 float-right">
+            <nav aria-label="Page navigation example">
+                <ul class="pagination">
+                    <li disabled="@(Filters.Loading || !Filters.PageHelper.HasPrev)" class="page-item @IsDisabled(Filters.PageHelper.HasPrev)"><a class="page-link" href="@Filters.PageHelper.PrevPage">Previous</a></li>
+                    <li disabled="@(Filters.Loading || !Filters.PageHelper.HasNext)" class="page-item @IsDisabled(Filters.PageHelper.HasNext)"><a class="page-link" href="@Filters.PageHelper.NextPage">Next</a></li>
+                </ul>
+            </nav>
+        </div>
+    </div>
+}
+
+@code{
+    [Parameter]
+    public int Page
+    {
+        get => Filters.PageHelper.Page;
+        set
+        {
+            Filters.PageHelper.Page = value;
+        }
+    }
+
+    private ICollection<Contact>? Contacts { get; set; }
+
+    private string IsDisabled(bool condition) =>
+        !Filters.Loading && condition ? "" : "disabled";
+
+    private int _lastPage = -1;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        // Ensure we're on the same, er, right page.
+        if (_lastPage < 1)
+        {
+            Nav.NavigateTo("/1");
+            return;
+        }
+
+        // Normalize the page values.
+        if (Filters.PageHelper.PageCount > 0)
+        {
+            if (Page < 1)
+            {
+                Nav.NavigateTo("/1");
+                return;
+            }
+            if (Page > Filters.PageHelper.PageCount)
+            {
+                Nav.NavigateTo($"/{Filters.PageHelper.PageCount}");
+                return;
+            }
+        }
+        base.OnAfterRender(firstRender);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Make sure the page really changed.
+        if (Page != _lastPage)
+        {
+            _lastPage = Page;
+            await ReloadAsync();
+        }
+        await base.OnParametersSetAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        if (Filters.Loading || Page < 1)
+        {
+            return;
+        }
+
+        Filters.Loading = true;
+
+        Contacts = new List<Contact>();
+
+        using var context = DbFactory.CreateDbContext();
+        var query = context.Contacts?.AsQueryable();
+
+        if (query is not null)
+        {
+            // run the query to load the current page
+            Contacts = await service.FetchAsync(query);
+        }
+
+        // now we're done
+        Filters.Loading = false;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+    }
+}
